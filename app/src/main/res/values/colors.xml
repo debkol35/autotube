@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="accent">#FF2BB3A3</color>
+    <color name="car_bg">#FF0F0F0F</color>
+    <color name="rail_bg">#FF181A1B</color>
+    <color name="key_bg">#FF2A2D2F</color>
+    <color name="key_bg_pressed">#FF3E4245</color>
+    <color name="icon_bg">#FF123A38</color>
+</resources>

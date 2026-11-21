@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Phone setup screen: follows the phone's light/dark setting (One UI look on Samsung). -->
+    <style name="PhoneTheme" parent="@android:style/Theme.DeviceDefault.DayNight">
+        <item name="android:colorAccent">@color/accent</item>
+        <item name="android:windowActionBar">false</item>
+        <item name="android:windowNoTitle">true</item>
+    </style>
+
+    <!-- Car screen (and its phone preview): always dark, so YouTube also renders dark. -->
+    <style name="CarTheme" parent="@android:style/Theme.Material.NoActionBar.Fullscreen">
+        <item name="android:colorAccent">@color/accent</item>
+        <item name="android:windowBackground">@color/car_bg</item>
+        <item name="android:colorBackground">@color/car_bg</item>
+    </style>
+</resources>
