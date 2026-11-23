@@ -66,6 +66,56 @@ object Installer {
     }
 
     fun selfApk(ctx: Context): Uri = Uri.parse("content://${ctx.packageName}.apk/${ApkProvider.SELF}")
+
+    /** The command the computer installers run with adb (shell is allowed to name Play Store). */
+    fun shellCommand(ctx: Context) =
+        "am start --activity-clear-task -a android.intent.action.INSTALL_PACKAGE " +
+            "-d ${selfApk(ctx)} -t $APK_MIME " +
+            "--es android.intent.extra.INSTALLER_PACKAGE_NAME $PLAY " +
+            "--ez android.intent.extra.NOT_UNKNOWN_SOURCE true"
+}
+
+/**
+ * Setup without a computer: Shizuku (free, on Play Store) runs with adb's "shell" rights after
+ * the user starts it once with Android's Wireless debugging. Through it AutoTube runs the same
+ * one command the computer installer runs, and the phone's installer records Play Store.
+ */
+object ShizukuSetup {
+    const val PKG = "moe.shizuku.privileged.api"
+
+    enum class Step { NOT_INSTALLED, NOT_RUNNING, NEEDS_PERMISSION, READY }
+
+    fun step(ctx: Context): Step = when {
+        !installed(ctx) -> Step.NOT_INSTALLED
+        !running() -> Step.NOT_RUNNING
+        !permitted() -> Step.NEEDS_PERMISSION
+        else -> Step.READY
+    }
+
+    fun installed(ctx: Context) = try {
+        ctx.packageManager.getPackageInfo(PKG, 0); true
+    } catch (e: Exception) { false }
+
+    fun running() = try { rikka.shizuku.Shizuku.pingBinder() } catch (e: Throwable) { false }
+
+    fun permitted() = try {
+        !rikka.shizuku.Shizuku.isPreV11() &&
+            rikka.shizuku.Shizuku.checkSelfPermission() == android.content.pm.PackageManager.PERMISSION_GRANTED
+    } catch (e: Throwable) { false }
+
+    fun requestPermission(code: Int) = try { rikka.shizuku.Shizuku.requestPermission(code) } catch (e: Throwable) {}
+
+    /** Runs [cmd] as Shizuku's user (shell). @return exit code and output. */
+    fun run(cmd: String): Pair<Int, String> {
+        // Shizuku 13 keeps newProcess non-public (it prefers bound "user services"), but it is the
+        // simplest way to run one command and is what most tools use.
+        val m = rikka.shizuku.Shizuku::class.java.getDeclaredMethod(
+            "newProcess", Array<String>::class.java, Array<String>::class.java, String::class.java)
+        m.isAccessible = true
+        val p = m.invoke(null, arrayOf("sh", "-c", cmd), null, null) as Process
+        val out = p.inputStream.bufferedReader().readText() + p.errorStream.bufferedReader().readText()
+        return p.waitFor() to out.trim()
+    }
 }
 
 /** Serves AutoTube's own installed APK (read-only, nothing else) to the system installer. */

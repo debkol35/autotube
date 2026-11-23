@@ -42,6 +42,13 @@ class Prefs(ctx: Context) {
         get() = p.getString("youtubeApp", null)
         set(v) = p.edit().putString("youtubeApp", v).apply()
 
+    /** Extra services offered on the car screen's Apps button (off until the user turns them on). */
+    fun serviceOn(s: Service): Boolean = s == Service.YOUTUBE || p.getBoolean("on_" + s.id, false)
+
+    fun setServiceOn(s: Service, on: Boolean) = p.edit().putBoolean("on_" + s.id, on).apply()
+
+    val services: List<Service> get() = Service.values().filter { serviceOn(it) }
+
     var lastUrl: String?
         get() = p.getString("lastUrl", null)
         set(v) = p.edit().putString("lastUrl", v).apply()
@@ -57,6 +64,75 @@ class Prefs(ctx: Context) {
         set(v) = p.edit().putString("pendingUrl", v).apply()
 
     fun takePending(): String? = pendingUrl?.also { pendingUrl = null }
+}
+
+/**
+ * What the car screen can show. YouTube uses its mobile site; Netflix and Prime Video only serve
+ * their web player to desktop browsers, so those get a desktop user agent and DRM (Widevine).
+ */
+enum class Service(val id: String, val label: String, val home: String, val signIn: String, val desktop: Boolean) {
+    YOUTUBE("youtube", "YouTube", "https://m.youtube.com/",
+        "https://accounts.google.com/ServiceLogin?service=youtube&continue=https%3A%2F%2Fm.youtube.com%2F", false),
+    NETFLIX("netflix", "Netflix", "https://www.netflix.com/browse", "https://www.netflix.com/login", true),
+    PRIME("prime", "Prime Video", "https://www.primevideo.com/", "https://www.primevideo.com/", true);
+
+    fun search(q: String): String {
+        val e = URLEncoder.encode(q.trim(), "UTF-8")
+        return when (this) {
+            YOUTUBE -> YouTubeLinks.search(q)
+            NETFLIX -> "https://www.netflix.com/search?q=$e"
+            PRIME -> "https://www.primevideo.com/search/ref=atv_nb_sug?ie=UTF8&phrase=$e"
+        }
+    }
+
+    companion object {
+        fun forUrl(url: String?): Service {
+            val host = try { Uri.parse(url ?: "").host?.lowercase() ?: "" } catch (e: Exception) { "" }
+            fun on(domain: String) = host == domain || host.endsWith(".$domain")
+            return when {
+                on("netflix.com") -> NETFLIX
+                on("primevideo.com") || Regex("(^|\\.)amazon\\.[a-z.]+$").containsMatchIn(host) -> PRIME
+                else -> YOUTUBE
+            }
+        }
+
+        /** A desktop Chrome (Linux) user agent with the same Chrome version as this WebView. */
+        fun desktopUserAgent(webViewUa: String): String {
+            val v = Regex("Chrome/([\\d.]+)").find(webViewUa)?.groupValues?.get(1) ?: "124.0.0.0"
+            return "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/$v Safari/537.36"
+        }
+
+        /** Plain Chrome-for-Android user agent (without the "wv" WebView markers). */
+        fun mobileUserAgent(webViewUa: String): String = webViewUa
+            .replace("; wv", "")
+            .replace(Regex(" Version/\\d+(\\.\\d+)*"), "")
+            .replace(Regex(" Build/[^;)]+"), "")
+    }
+}
+
+/**
+ * Small persistent log of what Android Auto does with the car screen (start/stop, size changes,
+ * crashes). Kept in the app's files (adb: /sdcard/Android/data/com.autotube.car/files/car-log.txt)
+ * and shared from the phone screen, because the phone's own log is gone by the time you're home.
+ */
+object CarLog {
+    private const val KEEP = 400
+    private val fmt = java.text.SimpleDateFormat("MM-dd HH:mm:ss", java.util.Locale.US)
+
+    private fun file(ctx: Context) = java.io.File(ctx.getExternalFilesDir(null) ?: ctx.filesDir, "car-log.txt")
+
+    @Synchronized
+    fun add(ctx: Context, msg: String) {
+        android.util.Log.i("CarLog", msg)
+        try {
+            val f = file(ctx)
+            f.appendText(fmt.format(java.util.Date()) + "  " + msg + "\n")
+            if (f.length() > 64_000) f.writeText(f.readLines().takeLast(KEEP).joinToString("\n", postfix = "\n"))
+        } catch (e: Exception) { /* logging must never break the app */ }
+    }
+
+    @Synchronized
+    fun read(ctx: Context): String = try { file(ctx).readText() } catch (e: Exception) { "" }
 }
 
 /** Phone -> car screen hand-off (same process: Android Auto runs our CarActivity in this app). */

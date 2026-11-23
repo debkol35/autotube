@@ -49,6 +49,13 @@ class MainActivity : Activity() {
     private lateinit var changeAppButton: Button
     private lateinit var pickTip: TextView
     private lateinit var adsSwitch: Switch
+    private lateinit var shizukuButton: Button
+    private lateinit var shizukuHint: TextView
+    private val shizukuListener = rikka.shizuku.Shizuku.OnRequestPermissionResultListener { code, result ->
+        if (code == REQ_SHIZUKU) runOnUiThread {
+            if (result == PackageManager.PERMISSION_GRANTED) runShizukuInstall() else refresh()
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -66,11 +73,18 @@ class MainActivity : Activity() {
         col.addView(card("1 · Let Android Auto show it").apply {
             installStatus = text("", 16f, bold = true)
             addView(installStatus)
-            addView(text("Android Auto only lists full-screen apps that its Play Store check accepts. Run the " +
-                "AutoTube installer on a computer once with this phone plugged in (see the README that came " +
-                "with AutoTube); it reinstalls AutoTube through the phone's own installer with Play Store " +
-                "recorded. Do the same for every AutoTube update.", 14f, color = muted).pad())
-            installButton = button("Try it from the phone (older Android only)", primary = false) { reinstallSelf() }
+            addView(text("Android Auto only lists full-screen apps that its Play Store check accepts. AutoTube " +
+                "reinstalls itself through the phone's own installer with Play Store recorded. Newer Android " +
+                "only allows that with \"shell\" rights, so use one of these (and again after every update):\n" +
+                "• No computer: the free Shizuku app (needs Wi-Fi for Wireless debugging). The button below " +
+                "walks you through it.\n" +
+                "• Computer: the AutoTube installer from the release zip, with this phone plugged in.",
+                14f, color = muted).pad())
+            shizukuButton = button("Set up without a computer") { shizukuSetup() }
+            addView(shizukuButton)
+            shizukuHint = text("", 13f, color = muted).pad()
+            addView(shizukuHint)
+            installButton = button("Try it from the phone (Android 13 and older)", primary = false) { reinstallSelf() }
             addView(installButton)
             installDetail = text("", 12f, color = muted).pad()
             addView(installDetail)
@@ -118,7 +132,29 @@ class MainActivity : Activity() {
             addView(carStatus)
         })
 
-        // 5. Settings
+        // 5. Other services
+        col.addView(card("Netflix and Prime Video (optional)").apply {
+            addView(text("Adds an Apps button on the car screen to switch between YouTube, Netflix and Prime " +
+                "Video. Sign in here on the phone first. These services protect their videos (DRM), so on " +
+                "some phones or cars they may refuse to play, play in lower quality, or show a black picture.",
+                14f, color = muted))
+            for (s in listOf(Service.NETFLIX, Service.PRIME)) {
+                addView(Switch(this@MainActivity).apply {
+                    text = "Show ${s.label} on the car screen"
+                    setTextColor(fg)
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+                    isChecked = prefs.serviceOn(s)
+                    setOnCheckedChangeListener { _, on -> prefs.setServiceOn(s, on) }
+                    setPadding(0, dp(10), 0, 0)
+                }, LinearLayout.LayoutParams(MATCH, WRAP))
+                addView(button("Sign in to ${s.label}", primary = false) { signIn(s) })
+            }
+            addView(button("Sign in to YouTube (optional, e.g. for Premium)", primary = false) { signIn(Service.YOUTUBE) })
+            addView(text("Google may refuse YouTube sign-in inside apps; YouTube works without signing in.",
+                12f, color = muted).pad())
+        })
+
+        // 6. Settings
         col.addView(card("Settings").apply {
             adsSwitch = Switch(this@MainActivity).apply {
                 text = "Skip YouTube ads on the car screen"
@@ -130,6 +166,7 @@ class MainActivity : Activity() {
             addView(adsSwitch, LinearLayout.LayoutParams(MATCH, WRAP))
             addView(text("Video ads are muted, fast-forwarded and skipped, and ad cards are hidden (like " +
                 "YouTube ReVanced). Turn off to see YouTube's ads as normal.", 14f, color = muted).pad())
+            addView(button("Share car log (for problem reports)", primary = false) { shareLog() })
         })
 
         // 6. Preview
@@ -148,6 +185,12 @@ class MainActivity : Activity() {
         })
 
         if (!prefs.noticeAccepted) showNotice()
+        try { rikka.shizuku.Shizuku.addRequestPermissionResultListener(shizukuListener) } catch (e: Throwable) {}
+    }
+
+    override fun onDestroy() {
+        try { rikka.shizuku.Shizuku.removeRequestPermissionResultListener(shizukuListener) } catch (e: Throwable) {}
+        super.onDestroy()
     }
 
     override fun onResume() {
@@ -179,10 +222,20 @@ class MainActivity : Activity() {
             installStatus.text = "✓ Ready: Android Auto sees AutoTube as a Play Store app"
             installStatus.setTextColor(good)
             installButton.visibility = View.GONE
+            shizukuButton.text = "Redo setup without a computer"
+            shizukuButton.visibility = View.VISIBLE
         } else {
             installStatus.text = "✗ Not yet: Android Auto will hide AutoTube"
             installStatus.setTextColor(bad)
             installButton.visibility = View.VISIBLE
+            shizukuButton.text = "Set up without a computer"
+        }
+        shizukuHint.text = when (ShizukuSetup.step(this)) {
+            ShizukuSetup.Step.NOT_INSTALLED -> "Next: install Shizuku (the button opens Play Store)."
+            ShizukuSetup.Step.NOT_RUNNING -> "Next: start Shizuku (open it > \"Start via Wireless debugging\"; " +
+                "it shows how to pair once). Then come back here and tap the button."
+            ShizukuSetup.Step.NEEDS_PERMISSION -> "Next: tap the button and allow AutoTube in Shizuku's prompt."
+            ShizukuSetup.Step.READY -> "Shizuku is running: tap the button, then \"Update\" on the next screen."
         }
         installDetail.text = "Installer: ${s.installer ?: "unknown"}" +
             (if (s.initiator != null) " · made by: ${s.initiator}" else "") +
@@ -247,6 +300,54 @@ class MainActivity : Activity() {
         }
         toast("Tap Install / Update. AutoTube closes while it reinstalls; open it again afterwards")
         Installer.install(this, Installer.selfApk(this))
+    }
+
+    private fun shizukuSetup() {
+        when (ShizukuSetup.step(this)) {
+            ShizukuSetup.Step.NOT_INSTALLED -> {
+                toast("Install Shizuku, start it with Wireless debugging, then come back here")
+                openStore(ShizukuSetup.PKG)
+            }
+            ShizukuSetup.Step.NOT_RUNNING -> {
+                toast("In Shizuku tap \"Start\" under Wireless debugging, then come back here")
+                packageManager.getLaunchIntentForPackage(ShizukuSetup.PKG)?.let { startActivity(it) }
+            }
+            ShizukuSetup.Step.NEEDS_PERMISSION -> ShizukuSetup.requestPermission(REQ_SHIZUKU)
+            ShizukuSetup.Step.READY -> runShizukuInstall()
+        }
+    }
+
+    private fun runShizukuInstall() {
+        val cmd = Installer.shellCommand(this)
+        Thread {
+            val (code, out) = try { ShizukuSetup.run(cmd) } catch (e: Throwable) { -1 to (e.cause ?: e).toString() }
+            CarLog.add(this, "shizuku setup: exit=$code ${out.take(300)}")
+            runOnUiThread {
+                if (code == 0) toast("Tap \"Update\" on the next screen. If Play Protect asks: More details > Install without scanning")
+                else toast("Shizuku couldn't open the installer: $out")
+            }
+        }.start()
+    }
+
+    private fun openStore(pkg: String) {
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$pkg")))
+        } catch (e: Exception) {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=$pkg")))
+        }
+    }
+
+    private fun signIn(s: Service) {
+        startActivity(Intent(this, SignInActivity::class.java).putExtra(SignInActivity.EXTRA_SERVICE, s.id))
+    }
+
+    private fun shareLog() {
+        val v = try { packageManager.getPackageInfo(packageName, 0).versionName } catch (e: Exception) { "?" }
+        val log = CarLog.read(this).ifBlank { "No car events recorded yet.\n" }
+        val text = "AutoTube $v car log (${android.os.Build.MODEL}, Android ${android.os.Build.VERSION.RELEASE})\n\n" +
+            log.takeLast(60_000)
+        startActivity(Intent.createChooser(
+            Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text), "Share car log"))
     }
 
     private fun openAndroidAuto() {
@@ -372,5 +473,6 @@ class MainActivity : Activity() {
         private const val WRAP = ViewGroup.LayoutParams.WRAP_CONTENT
         private const val REQ_LOC = 2
         private const val REQ_BG_LOC = 3
+        private const val REQ_SHIZUKU = 4
     }
 }

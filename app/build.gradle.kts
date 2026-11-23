@@ -20,8 +20,8 @@ android {
         applicationId = "com.autotube.car"
         minSdk = 29
         targetSdk = 34
-        versionCode = 3
-        versionName = "2.0"
+        versionCode = 4
+        versionName = "2.1"
     }
 
     signingConfigs {
@@ -65,4 +65,8 @@ dependencies {
     implementation("androidx.fragment:fragment:1.6.2")
     implementation("androidx.recyclerview:recyclerview:1.3.2")
     implementation("androidx.core:core:1.12.0")
+    // Phone-only setup: Shizuku (a separate app started with Wireless debugging) lets AutoTube run
+    // the one adb-shell command that records the Play Store install, without a computer.
+    implementation("dev.rikka.shizuku:api:13.1.5")
+    implementation("dev.rikka.shizuku:provider:13.1.5")
 }

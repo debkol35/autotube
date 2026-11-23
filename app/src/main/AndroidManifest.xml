@@ -15,6 +15,8 @@
 
     <queries>
         <package android:name="com.google.android.projection.gearhead" />
+        <!-- Shizuku: optional, for setting up Android Auto without a computer. -->
+        <package android:name="moe.shizuku.privileged.api" />
         <!-- Finds YouTube ReVanced (any patched YouTube) to pick videos in; see YouTubeApp. -->
         <intent>
             <action android:name="android.intent.action.MAIN" />
@@ -91,6 +93,21 @@
                 <data android:mimeType="text/plain" />
             </intent-filter>
         </activity>
+
+        <!-- Signs in to YouTube / Netflix / Prime Video on the phone (the car screen shares the cookies). -->
+        <activity
+            android:name=".SignInActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden"
+            android:exported="false" />
+
+        <!-- Lets Shizuku hand AutoTube its binder (phone-only setup). -->
+        <provider
+            android:name="rikka.shizuku.ShizukuProvider"
+            android:authorities="${applicationId}.shizuku"
+            android:enabled="true"
+            android:exported="true"
+            android:multiprocess="false"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
 
         <!-- Hands our own APK (or a picked update APK) to the system installer. Exported (read-only,
              serves nothing but AutoTube's own APK) so an installer started from adb can read it too. -->

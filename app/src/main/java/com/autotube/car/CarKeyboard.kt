@@ -34,6 +34,9 @@ class CarKeyboard(
 
     private val text = StringBuilder()
     private var searchMode = true
+    private var searchLabel = "YouTube"
+    private var suggest = true
+    private var secret = false
     private val field = TextView(ctx)
     private val suggestRow = LinearLayout(ctx)
     private lateinit var doneKey: TextView
@@ -85,10 +88,17 @@ class CarKeyboard(
         }, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
     }
 
-    fun open(initial: String, search: Boolean) {
+    /**
+     * @param label what a search looks in ("YouTube", "Netflix"...); [suggest] shows YouTube's
+     * suggestions; [secret] hides the typed text (password boxes: the car screen is visible to all).
+     */
+    fun open(initial: String, search: Boolean, label: String = "YouTube", suggest: Boolean = true, secret: Boolean = false) {
         text.setLength(0)
-        text.append(initial)
+        if (!secret) text.append(initial)
         searchMode = search
+        searchLabel = label
+        this.suggest = suggest && search
+        this.secret = secret
         doneKey.text = if (search) "Search" else "Enter"
         visibility = VISIBLE
         changed()
@@ -109,14 +119,14 @@ class CarKeyboard(
 
     private fun changed() {
         if (text.isEmpty()) {
-            field.text = if (searchMode) "Search YouTube" else "Type here"
+            field.text = if (searchMode) "Search $searchLabel" else if (secret) "Password" else "Type here"
             field.setTextColor(0xFF8A9095.toInt())
         } else {
-            field.text = text.toString() + "▏"
+            field.text = (if (secret) "•".repeat(text.length) else text.toString()) + "▏"
             field.setTextColor(Color.WHITE)
         }
         main.removeCallbacks(suggestTask)
-        if (searchMode && text.isNotBlank()) main.postDelayed(suggestTask, 250) else showSuggestions(emptyList())
+        if (suggest && text.isNotBlank()) main.postDelayed(suggestTask, 250) else showSuggestions(emptyList())
     }
 
     private fun fetchSuggestions() {

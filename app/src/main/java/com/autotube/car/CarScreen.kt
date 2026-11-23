@@ -36,17 +36,19 @@ import android.widget.TextView
 import org.json.JSONObject
 
 /**
- * The car screen: YouTube's mobile site in a WebView, a rail of big buttons on the left
- * (made for wide car displays), our own keyboard, a "fit video" mode and the driving cover.
- * Used by both the Android Auto CarActivity and the phone preview.
+ * The car screen: YouTube's mobile site (or Netflix / Prime Video, if turned on) in a WebView, a
+ * rail of big buttons on the left (made for wide car displays), our own keyboard, a full-screen
+ * video mode and the driving cover. Used by both the Android Auto CarActivity and the phone preview.
  */
 @SuppressLint("ViewConstructor", "SetJavaScriptEnabled")
 class CarScreen(ctx: Context, private val inCar: Boolean) : FrameLayout(ctx) {
 
     private val prefs = Prefs(ctx)
     private val main = Handler(Looper.getMainLooper())
+    private val rail = LinearLayout(ctx)
     private val content = FrameLayout(ctx)
     private var web: CarWebView = CarWebView(ctx)
+    private var baseUa = ""
     private val fullscreenBox = FrameLayout(ctx)
     private var customView: View? = null
     private var customCallback: WebChromeClient.CustomViewCallback? = null
@@ -56,23 +58,32 @@ class CarScreen(ctx: Context, private val inCar: Boolean) : FrameLayout(ctx) {
     private val coverText = TextView(ctx)
     private val toastView = TextView(ctx)
     private val playBtn: ImageButton
-    private val fitBtn: ImageButton
-    private var fitMode = false
+    private val fullBtn: ImageButton
+    private val appsBtn: ImageButton
+    private val appsPanel = LinearLayout(ctx)
+    private val fullTouch = View(ctx)
+    private val fullBar = LinearLayout(ctx)
+    private lateinit var fullPlayBtn: ImageButton
+    private var fullMode = false
     private var playing = false
     private var destroyed = false
     private val guard = DriveGuard(ctx) { onDriveState(it) }
     private val bridgeListener: (String) -> Unit = { open(it) }
     private val hideToast = Runnable { toastView.visibility = GONE }
+    private val hideFullBar = Runnable { fullBar.visibility = GONE }
 
     /** The picture (and browsing) is allowed only once the phone's GPS says the car is parked. */
     private val locked get() = !prefs.noticeAccepted || guard.state != DriveGuard.State.PARKED
+
+    /** The service of the page on screen (decides home, search and user agent). */
+    private val service get() = Service.forUrl(web.url ?: prefs.lastUrl)
 
     init {
         setBackgroundColor(BG)
         val row = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
         addView(row, LayoutParams(MATCH, MATCH))
 
-        val rail = LinearLayout(ctx).apply {
+        rail.apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(RAIL)
             setPadding(dp(6), dp(6), dp(6), dp(6))
@@ -82,13 +93,43 @@ class CarScreen(ctx: Context, private val inCar: Boolean) : FrameLayout(ctx) {
 
         content.addView(web, LayoutParams(MATCH, MATCH))
 
+        // Full screen: the page shows only the video; a tap anywhere brings up a small control bar.
+        fullTouch.apply {
+            visibility = GONE
+            isClickable = true
+            setOnClickListener { showFullBar() }
+        }
+        content.addView(fullTouch, LayoutParams(MATCH, MATCH))
+        fullBar.apply {
+            orientation = LinearLayout.HORIZONTAL
+            visibility = GONE
+            setPadding(dp(8), dp(8), dp(8), dp(8))
+            background = context.pressable(0xE0181A1B.toInt(), 0xE0181A1B.toInt(), 22)
+            addView(barButton(R.drawable.ic_fit_exit, "Exit full screen") { setFull(false) })
+            fullPlayBtn = barButton(R.drawable.ic_play, "Play or pause") { togglePlay(); showFullBar() }
+            addView(fullPlayBtn)
+        }
+        content.addView(fullBar, LayoutParams(WRAP, WRAP, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
+            bottomMargin = dp(18)
+        })
+
+        appsPanel.apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            visibility = GONE
+            isClickable = true
+            setBackgroundColor(0xF0101214.toInt())
+            setOnClickListener { visibility = GONE }
+        }
+        content.addView(appsPanel, LayoutParams(MATCH, MATCH))
+
         keyboard = CarKeyboard(ctx, ::onKeyboardDone, ::closeKeyboard).apply { visibility = GONE }
         content.addView(keyboard, LayoutParams(MATCH, MATCH))
 
         driveCover = buildDriveCover().apply { visibility = GONE }
         content.addView(driveCover, LayoutParams(MATCH, MATCH))
 
-        // Real fullscreen (YouTube's own fullscreen button) covers the rail too.
+        // Real fullscreen (the site's own fullscreen button) covers the rail too.
         fullscreenBox.setBackgroundColor(Color.BLACK)
         fullscreenBox.visibility = GONE
         addView(fullscreenBox, LayoutParams(MATCH, MATCH))
@@ -104,11 +145,13 @@ class CarScreen(ctx: Context, private val inCar: Boolean) : FrameLayout(ctx) {
             bottomMargin = dp(24)
         })
 
-        railButton(rail, R.drawable.ic_back, "Back") { handleBack() }
-        railButton(rail, R.drawable.ic_home, "YouTube home") { if (!blockedWhileLocked()) open(YouTubeLinks.HOME) }
-        railButton(rail, R.drawable.ic_search, "Search") { if (!blockedWhileLocked()) keyboard.open("", true) }
-        playBtn = railButton(rail, R.drawable.ic_play, "Play or pause") { togglePlay() }
-        fitBtn = railButton(rail, R.drawable.ic_fit, "Fit video to screen") { if (!blockedWhileLocked()) setFit(!fitMode) }
+        railButton(R.drawable.ic_back, "Back") { handleBack() }
+        railButton(R.drawable.ic_home, "Home") { if (!blockedWhileLocked()) load(service.home) }
+        railButton(R.drawable.ic_search, "Search") { if (!blockedWhileLocked()) openSearch() }
+        playBtn = railButton(R.drawable.ic_play, "Play or pause") { togglePlay() }
+        fullBtn = railButton(R.drawable.ic_fit, "Full screen video") { if (!blockedWhileLocked()) setFull(true) }
+        appsBtn = railButton(R.drawable.ic_apps, "YouTube, Netflix, Prime Video") { if (!blockedWhileLocked()) showApps() }
+        updateAppsButton()
 
         setupWeb(web)
     }
@@ -129,7 +172,7 @@ class CarScreen(ctx: Context, private val inCar: Boolean) : FrameLayout(ctx) {
             last != null -> last
             else -> YouTubeLinks.HOME
         }
-        web.loadUrl(url)
+        load(url)
     }
 
     /** Phone preview only: pause when the phone app goes to the background. */
@@ -150,12 +193,18 @@ class CarScreen(ctx: Context, private val inCar: Boolean) : FrameLayout(ctx) {
         web.destroy()
     }
 
-    /** @return true if Back was used up here (keyboard, fullscreen, fit mode, page history). */
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        if (inCar) CarLog.add(context, "car screen size ${oldw}x$oldh -> ${w}x$h")
+    }
+
+    /** @return true if Back was used up here (keyboard, apps, fullscreen, page history). */
     fun handleBack(): Boolean {
         when {
             keyboard.visibility == VISIBLE -> closeKeyboard()
+            appsPanel.visibility == VISIBLE -> appsPanel.visibility = GONE
             customView != null -> exitFullscreen()
-            fitMode -> setFit(false)
+            fullMode -> setFull(false)
             web.canGoBack() -> web.goBack()
             else -> return false
         }
@@ -167,9 +216,21 @@ class CarScreen(ctx: Context, private val inCar: Boolean) : FrameLayout(ctx) {
     fun open(url: String) {
         if (destroyed) return
         if (keyboard.visibility == VISIBLE) closeKeyboard()
+        appsPanel.visibility = GONE
         exitFullscreen()
+        load(url)
+    }
+
+    /** Loads [url] with the user agent its site needs (desktop for Netflix / Prime Video). */
+    private fun load(url: String) {
+        val ua = userAgentFor(url)
+        if (web.settings.userAgentString != ua) web.settings.userAgentString = ua
+        setPlaying(false) // the new page reports its own video state
         web.loadUrl(url)
     }
+
+    private fun userAgentFor(url: String?): String =
+        if (Service.forUrl(url).desktop) Service.desktopUserAgent(baseUa) else Service.mobileUserAgent(baseUa)
 
     private fun togglePlay() {
         web.evaluateJavascript(JS_TOGGLE_PLAY) { r ->
@@ -185,14 +246,82 @@ class CarScreen(ctx: Context, private val inCar: Boolean) : FrameLayout(ctx) {
     private fun setPlaying(p: Boolean) {
         if (p != playing) Log.d(TAG, "playing=$p")
         playing = p
-        playBtn.setImageResource(if (p) R.drawable.ic_pause else R.drawable.ic_play)
+        val icon = if (p) R.drawable.ic_pause else R.drawable.ic_play
+        playBtn.setImageResource(icon)
+        fullPlayBtn.setImageResource(icon)
     }
 
-    private fun setFit(on: Boolean) {
-        fitMode = on
-        fitBtn.setImageResource(if (on) R.drawable.ic_fit_exit else R.drawable.ic_fit)
+    /** Full screen: hides our rail and everything on the page except the video. */
+    private fun setFull(on: Boolean) {
+        if (on) {
+            web.evaluateJavascript("document.getElementsByTagName('video').length") { n ->
+                if ((n?.toIntOrNull() ?: 0) == 0) {
+                    toast("Open a video first")
+                } else if (!destroyed) {
+                    applyFull(true)
+                    showFullBar()
+                    toast("Tap the screen for controls. Back leaves full screen")
+                }
+            }
+        } else {
+            applyFull(false)
+        }
+    }
+
+    private fun applyFull(on: Boolean) {
+        fullMode = on
+        rail.visibility = if (on) GONE else VISIBLE
+        fullTouch.visibility = if (on) VISIBLE else GONE
+        if (!on) {
+            main.removeCallbacks(hideFullBar)
+            fullBar.visibility = GONE
+        }
         web.evaluateJavascript("$JS_FIT($on)", null)
-        if (on) toast("Video fitted to the screen. Back or the same button to undo")
+        if (inCar) CarLog.add(context, "full screen $on")
+    }
+
+    private fun showFullBar() {
+        if (!fullMode) return
+        fullBar.visibility = VISIBLE
+        fullBar.bringToFront()
+        main.removeCallbacks(hideFullBar)
+        main.postDelayed(hideFullBar, 4000)
+    }
+
+    private fun openSearch() {
+        val s = service
+        keyboard.open("", true, s.label, suggest = s == Service.YOUTUBE)
+    }
+
+    // ---------------------------------------------------------------- services
+
+    private fun updateAppsButton() {
+        appsBtn.visibility = if (prefs.services.size > 1) VISIBLE else GONE
+    }
+
+    private fun showApps() {
+        appsPanel.removeAllViews()
+        prefs.services.forEach { s ->
+            appsPanel.addView(TextView(context).apply {
+                text = s.label
+                gravity = Gravity.CENTER
+                setTextColor(Color.WHITE)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 24f)
+                typeface = Typeface.DEFAULT_BOLD
+                val c = when (s) {
+                    Service.YOUTUBE -> 0xFFB3261E.toInt()
+                    Service.NETFLIX -> 0xFF8E0A12.toInt()
+                    Service.PRIME -> 0xFF1A6FB0.toInt()
+                }
+                background = context.pressable(c, 0xFF3A3E41.toInt(), 18)
+                setOnClickListener {
+                    appsPanel.visibility = GONE
+                    if (fullMode) applyFull(false)
+                    load(s.home)
+                }
+            }, LinearLayout.LayoutParams(dp(200), dp(130)).apply { setMargins(dp(12), 0, dp(12), 0) })
+        }
+        appsPanel.visibility = VISIBLE
     }
 
     private fun blockedWhileLocked(): Boolean {
@@ -205,7 +334,7 @@ class CarScreen(ctx: Context, private val inCar: Boolean) : FrameLayout(ctx) {
     private fun onKeyboardDone(text: String, search: Boolean) {
         closeKeyboard()
         if (search) {
-            if (text.isNotBlank()) web.loadUrl(YouTubeLinks.search(text))
+            if (text.isNotBlank()) load(service.search(text))
         } else {
             web.evaluateJavascript("$JS_SET_INPUT(${JSONObject.quote(text)})", null)
         }
@@ -220,12 +349,13 @@ class CarScreen(ctx: Context, private val inCar: Boolean) : FrameLayout(ctx) {
 
     private var lastDriveState = guard.state
 
-    /** Picks up setup done on the phone while this screen is open (notice accepted, location allowed). */
+    /** Picks up setup done on the phone while this screen is open (notice, location, services). */
     private val recheck: Runnable = object : Runnable {
         override fun run() {
             if (destroyed) return
             if (guard.state == DriveGuard.State.NO_PERMISSION && DriveGuard.hasLocation(context)) guard.start()
             onDriveState(guard.state)
+            updateAppsButton()
             main.postDelayed(this, RECHECK_MS)
         }
     }
@@ -237,6 +367,7 @@ class CarScreen(ctx: Context, private val inCar: Boolean) : FrameLayout(ctx) {
         if (locked) {
             setCoverText(s)
             keyboard.visibility = GONE
+            appsPanel.visibility = GONE
             exitFullscreen()
             driveCover.visibility = VISIBLE
         } else if (driveCover.visibility == VISIBLE) {
@@ -294,7 +425,7 @@ class CarScreen(ctx: Context, private val inCar: Boolean) : FrameLayout(ctx) {
         }, LinearLayout.LayoutParams(dp(80), dp(80)))
     }
 
-    // ---------------------------------------------------------------- fullscreen
+    // ---------------------------------------------------------------- site fullscreen
 
     private fun exitFullscreen() {
         val v = customView ?: return
@@ -316,6 +447,7 @@ class CarScreen(ctx: Context, private val inCar: Boolean) : FrameLayout(ctx) {
         w.setOnLongClickListener { true }
         w.isHapticFeedbackEnabled = false
         w.settings.apply {
+            if (baseUa.isEmpty()) baseUa = userAgentString
             javaScriptEnabled = true
             domStorageEnabled = true
             mediaPlaybackRequiresUserGesture = false
@@ -324,7 +456,7 @@ class CarScreen(ctx: Context, private val inCar: Boolean) : FrameLayout(ctx) {
             setSupportZoom(false)
             setSupportMultipleWindows(false)
             javaScriptCanOpenWindowsAutomatically = false
-            userAgentString = cleanUserAgent(userAgentString)
+            userAgentString = Service.mobileUserAgent(baseUa)
             if (Build.VERSION.SDK_INT >= 33) isAlgorithmicDarkeningAllowed = true
         }
         CookieManager.getInstance().apply {
@@ -340,13 +472,14 @@ class CarScreen(ctx: Context, private val inCar: Boolean) : FrameLayout(ctx) {
     private fun recreateWeb() {
         if (destroyed) return
         exitFullscreen()
+        if (fullMode) applyFull(false)
         val old = web
         content.removeView(old)
         try { old.destroy() } catch (e: Exception) { Log.w(TAG, "destroy", e) }
         web = CarWebView(context)
         setupWeb(web)
         content.addView(web, 0, LayoutParams(MATCH, MATCH))
-        web.loadUrl(prefs.lastUrl ?: YouTubeLinks.HOME)
+        load(prefs.lastUrl ?: YouTubeLinks.HOME)
     }
 
     private fun remember(url: String?) {
@@ -361,16 +494,20 @@ class CarScreen(ctx: Context, private val inCar: Boolean) : FrameLayout(ctx) {
         override fun shouldOverrideUrlLoading(view: WebView, req: WebResourceRequest): Boolean {
             val u = req.url
             when (u.scheme?.lowercase()) {
-                "http", "https" -> return false
+                "http", "https" -> {
+                    // Crossing between YouTube and Netflix / Prime Video needs the other user agent.
+                    if (!req.isForMainFrame || userAgentFor(u.toString()) == view.settings.userAgentString) return false
+                    main.post { load(u.toString()) }
+                }
                 "vnd.youtube" -> {
                     val id = u.schemeSpecificPart?.substringBefore('?')?.trim('/')
-                    if (id != null && id.length == 11) view.loadUrl(YouTubeLinks.watch(id))
+                    if (id != null && id.length == 11) load(YouTubeLinks.watch(id))
                 }
                 "intent" -> try {
                     Intent.parseUri(u.toString(), Intent.URI_INTENT_SCHEME)
                         .getStringExtra("browser_fallback_url")
                         ?.takeIf { it.startsWith("http") }
-                        ?.let { view.loadUrl(it) }
+                        ?.let { load(it) }
                 } catch (e: Exception) { Log.d(TAG, "intent url: $e") }
             }
             return true // never leave for other apps: nothing else can show on the car screen
@@ -378,19 +515,20 @@ class CarScreen(ctx: Context, private val inCar: Boolean) : FrameLayout(ctx) {
 
         override fun onPageFinished(view: WebView, url: String?) {
             view.evaluateJavascript(JS_INIT, null)
-            if (fitMode) view.evaluateJavascript("$JS_FIT(true)", null)
+            if (fullMode) view.evaluateJavascript("$JS_FIT(true)", null)
             remember(url)
         }
 
         override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) {
             // YouTube is a single-page app: most navigation never fires onPageFinished.
             view.evaluateJavascript(JS_INIT, null)
-            if (fitMode) view.evaluateJavascript("$JS_FIT(true)", null)
+            if (fullMode) view.evaluateJavascript("$JS_FIT(true)", null)
             remember(url)
         }
 
         override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
             Log.w(TAG, "renderer gone, crashed=${detail.didCrash()}")
+            if (inCar) CarLog.add(context, "web renderer gone, crashed=${detail.didCrash()}")
             main.post { recreateWeb() }
             return true
         }
@@ -417,7 +555,15 @@ class CarScreen(ctx: Context, private val inCar: Boolean) : FrameLayout(ctx) {
         override fun onJsAlert(v: WebView, url: String?, msg: String?, r: JsResult): Boolean { r.confirm(); return true }
         override fun onJsConfirm(v: WebView, url: String?, msg: String?, r: JsResult): Boolean { r.confirm(); return true }
         override fun onJsBeforeUnload(v: WebView, url: String?, msg: String?, r: JsResult): Boolean { r.confirm(); return true }
-        override fun onPermissionRequest(request: PermissionRequest) = request.deny()
+
+        // Netflix / Prime Video (and paid YouTube films) need DRM (Widevine); nothing else is granted.
+        override fun onPermissionRequest(request: PermissionRequest) {
+            val drm = PermissionRequest.RESOURCE_PROTECTED_MEDIA_ID
+            val s = Service.forUrl(request.origin?.toString())
+            val known = s != Service.YOUTUBE || (request.origin?.host ?: "").endsWith("youtube.com")
+            if (drm in request.resources && known && prefs.serviceOn(s)) request.grant(arrayOf(drm)) else request.deny()
+        }
+
         override fun onGeolocationPermissionsShowPrompt(origin: String?, cb: GeolocationPermissions.Callback) =
             cb.invoke(origin, false, false)
     }
@@ -425,9 +571,10 @@ class CarScreen(ctx: Context, private val inCar: Boolean) : FrameLayout(ctx) {
     /** Called by the page (on a WebView thread). */
     private inner class JsApi {
         @JavascriptInterface
-        fun onInputFocus(value: String?, isSearch: Boolean) = main.post {
+        fun onInputFocus(value: String?, isSearch: Boolean, isPassword: Boolean) = main.post {
             if (destroyed || locked) return@post
-            keyboard.open(value ?: "", isSearch)
+            val s = service
+            keyboard.open(value ?: "", isSearch, s.label, suggest = s == Service.YOUTUBE, secret = isPassword)
         }.let { }
 
         @JavascriptInterface
@@ -447,7 +594,7 @@ class CarScreen(ctx: Context, private val inCar: Boolean) : FrameLayout(ctx) {
 
     // ---------------------------------------------------------------- small views
 
-    private fun railButton(rail: LinearLayout, icon: Int, label: String, onClick: () -> Unit): ImageButton {
+    private fun railButton(icon: Int, label: String, onClick: () -> Unit): ImageButton {
         val b = ImageButton(context).apply {
             setImageResource(icon)
             scaleType = ImageView.ScaleType.CENTER_INSIDE
@@ -460,9 +607,20 @@ class CarScreen(ctx: Context, private val inCar: Boolean) : FrameLayout(ctx) {
         return b
     }
 
+    private fun barButton(icon: Int, label: String, onClick: () -> Unit) = ImageButton(context).apply {
+        setImageResource(icon)
+        scaleType = ImageView.ScaleType.CENTER_INSIDE
+        contentDescription = label
+        background = context.pressable(0x00000000, 0xFF34393C.toInt(), 14)
+        setPadding(dp(14), dp(14), dp(14), dp(14))
+        setOnClickListener { onClick() }
+        layoutParams = LinearLayout.LayoutParams(dp(76), dp(68)).apply { setMargins(dp(4), 0, dp(4), 0) }
+    }
+
     private fun toast(msg: String, ms: Long = 2500) {
         toastView.text = msg
         toastView.visibility = VISIBLE
+        toastView.bringToFront()
         main.removeCallbacks(hideToast)
         main.postDelayed(hideToast, ms)
     }
@@ -475,18 +633,14 @@ class CarScreen(ctx: Context, private val inCar: Boolean) : FrameLayout(ctx) {
         private const val BG = 0xFF0F0F0F.toInt()
         private const val RAIL = 0xFF181A1B.toInt()
 
-        /** Plain Chrome-for-Android user agent (without the "wv" WebView markers). */
-        fun cleanUserAgent(ua: String): String = ua
-            .replace("; wv", "")
-            .replace(Regex(" Version/\\d+(\\.\\d+)*"), "")
-            .replace(Regex(" Build/[^;)]+"), "")
-
         // Hooks text boxes (to open our keyboard) and video play/pause; safe to run many times.
         private val JS_INIT = """
             (function(){
               if (window.__autotube) return; window.__autotube = true;
-              // No ads, like YouTube ReVanced: ad cards are hidden, video ads are muted, run at 16x and
-              // skipped (jump to the end / Skip button), then the video's sound and speed come back.
+              // No ads, like YouTube ReVanced: ad cards are hidden; a video ad is muted, run at 16x and
+              // its Skip button pressed, then the video's sound and speed come back. The ad is never
+              // seeked to its end: when the real video takes over, the player's "ad" mark can lag
+              // behind, and a seek then would jump the real video to its end (blank screen).
               // (This can run on a page that has no <head> yet: touch the DOM only inside the timers.)
               var NOADS = 'ad-slot-renderer,ytm-promoted-sparkles-web-renderer,ytm-promoted-video-renderer,' +
                 'ytm-promoted-sparkles-text-search-renderer,ytm-companion-ad-renderer,ytm-companion-slot,' +
@@ -499,6 +653,13 @@ class CarScreen(ctx: Context, private val inCar: Boolean) : FrameLayout(ctx) {
                 else { var b = document.querySelector('.ytp-unmute, .ytp-unmute-button'); if (b) b.click(); }
                 setTimeout(function(){ if (v.muted) v.muted = false; }, 400);
               }
+              function adOver(v){
+                if (v.__atAdOver) return;
+                v.__atAdOver = true;
+                try { v.playbackRate = 1; } catch (x) {}
+                v.__atTicks = 0; // the video after the ad gets its own unmute window
+                unmute(v);
+              }
               setInterval(function(){
                 var skip = AutoTube.skipAds(), st = document.getElementById('autotube-noads');
                 if (skip && !st && document.head) {
@@ -508,18 +669,25 @@ class CarScreen(ctx: Context, private val inCar: Boolean) : FrameLayout(ctx) {
                 var p = document.querySelector('.html5-video-player'), v = p && p.querySelector('video');
                 if (!v) return;
                 if (skip && (p.classList.contains('ad-showing') || p.classList.contains('ad-interrupting'))) {
-                  if (!v.__atAd) { v.__atAd = true; AutoTube.onAd(true); }
-                  if (!v.muted) v.muted = true;
-                  if (v.playbackRate != 16) try { v.playbackRate = 16; } catch (x) {}
-                  if (isFinite(v.duration) && v.duration > 0 && v.currentTime < v.duration - 0.5)
-                    try { v.currentTime = v.duration - 0.1; } catch (x) {}
+                  if (!v.__atAd) {
+                    v.__atAd = true; v.__atAdOver = false;
+                    v.__atAdSrc = v.currentSrc; v.__atAdDur = v.duration;
+                    AutoTube.onAd(true);
+                  }
+                  if (!isFinite(v.__atAdDur) && isFinite(v.duration)) v.__atAdDur = v.duration;
+                  // Same element, but is it still the ad? A new source or a different length means
+                  // the real video has started: stop speeding it up.
+                  var changed = v.currentSrc !== v.__atAdSrc ||
+                    (isFinite(v.__atAdDur) && isFinite(v.duration) && Math.abs(v.duration - v.__atAdDur) > 1);
+                  if (!changed && !v.__atAdOver) {
+                    if (!v.muted) v.muted = true;
+                    if (v.playbackRate != 16) try { v.playbackRate = 16; } catch (x) {}
+                  } else adOver(v);
                   var s = document.querySelector('.ytp-ad-skip-button,.ytp-ad-skip-button-modern,.ytp-skip-ad-button,.ytp-ad-skip-button-container button');
                   if (s) s.click();
                 } else if (v.__atAd) {
                   v.__atAd = false; AutoTube.onAd(false);
-                  try { v.playbackRate = 1; } catch (x) {}
-                  v.__atTicks = 0; // the video after the ad gets its own unmute window
-                  unmute(v);
+                  adOver(v);
                 }
               }, 250);
               function editable(t){
@@ -535,8 +703,9 @@ class CarScreen(ctx: Context, private val inCar: Boolean) : FrameLayout(ctx) {
               function opened(t){
                 if (!editable(t)) return;
                 window.__atEl = t;
-                var hint = [t.name, t.id, t.className, t.getAttribute('type'), t.getAttribute('aria-label'), t.placeholder].join(' ');
-                AutoTube.onInputFocus(t.isContentEditable ? t.innerText : (t.value || ''), /search/i.test(hint));
+                var ty = (t.getAttribute && t.getAttribute('type') || '').toLowerCase();
+                var hint = [t.name, t.id, t.className, ty, t.getAttribute('aria-label'), t.placeholder].join(' ');
+                AutoTube.onInputFocus(t.isContentEditable ? t.innerText : (t.value || ''), /search/i.test(hint), ty == 'password');
               }
               document.addEventListener('focusin', function(e){ opened(e.target); }, true);
               document.addEventListener('click', function(e){ if (e.target === document.activeElement) opened(e.target); }, true);
@@ -553,8 +722,8 @@ class CarScreen(ctx: Context, private val inCar: Boolean) : FrameLayout(ctx) {
                     v.addEventListener('playing', function(){ AutoTube.onPlayState(true); });
                     v.addEventListener('pause', function(){ AutoTube.onPlayState(false); });
                   }
-                  // YouTube starts muted when a page opens without a tap (resume, sent from phone), and
-                  // may mute again while it sets up. Unmute during the first 10 s of playing of each
+                  // Sites start muted when a page opens without a tap (resume, sent from phone), and
+                  // may mute again while they set up. Unmute during the first 10 s of playing of each
                   // video, so a deliberate mute later is left alone.
                   if (v.__atSrc !== v.currentSrc) { v.__atSrc = v.currentSrc; v.__atTicks = 0; }
                   if (!v.paused && v.__atTicks < 10) { v.__atTicks++; if (!v.__atAd && v.muted) unmute(v); }
