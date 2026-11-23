@@ -40,6 +40,11 @@ class CarKeyboard(
     private val field = TextView(ctx)
     private val suggestRow = LinearLayout(ctx)
     private lateinit var doneKey: TextView
+    private lateinit var modeKey: TextView
+    private val rowsBox = LinearLayout(ctx)
+    private var shift = false
+    private var capsLock = false
+    private var symbols = false
     private val main = Handler(Looper.getMainLooper())
     private val io = Executors.newSingleThreadExecutor()
     private var suggestSeq = 0
@@ -66,30 +71,62 @@ class CarKeyboard(
         addView(suggestRow, LayoutParams(LayoutParams.MATCH_PARENT, 0, 0.95f))
 
         row("1234567890")
-        row("qwertyuiop")
-        row("asdfghjkl", pad = 0.5f)
+        // Letter rows, rebuilt when Shift or ?123 changes them.
+        rowsBox.orientation = VERTICAL
+        addView(rowsBox, LayoutParams(LayoutParams.MATCH_PARENT, 0, 3f))
         addView(LinearLayout(ctx).apply {
             orientation = HORIZONTAL
-            addView(View(ctx), LayoutParams(0, LayoutParams.MATCH_PARENT, 0.5f))
-            "zxcvbnm".forEach { c -> addView(key(c.toString()) { type(c.toString()) }, keyLp(1f)) }
-            addView(iconKey(R.drawable.ic_backspace, onLong = { text.setLength(0); changed() }) {
-                if (text.isNotEmpty()) text.setLength(text.length - 1)
-                changed()
-            }, keyLp(2.5f))
-        }, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
-        addView(LinearLayout(ctx).apply {
-            orientation = HORIZONTAL
-            addView(iconKey(R.drawable.ic_close) { onClose() }, keyLp(1.5f))
-            addView(key("-") { type("-") }, keyLp(1f))
-            addView(key("space") { type(" ") }, keyLp(4.5f))
+            addView(iconKey(R.drawable.ic_close) { onClose() }, keyLp(1.2f))
+            modeKey = key("?123", small = true) { symbols = !symbols; shift = false; capsLock = false; buildRows() }
+            addView(modeKey, keyLp(1.4f))
+            addView(key("@") { type("@") }, keyLp(1f))
+            addView(key("space") { type(" ") }, keyLp(3.6f))
             addView(key(".") { type(".") }, keyLp(1f))
             doneKey = key("Search", accent = true) { submit(text.toString(), searchMode) }
-            addView(doneKey, keyLp(2f))
+            addView(doneKey, keyLp(1.8f))
         }, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
+        buildRows()
+    }
+
+    /** Letters (lower or upper case) or symbols, with Shift and Backspace on the last row. */
+    private fun buildRows() {
+        rowsBox.removeAllViews()
+        val rows = if (symbols) listOf("@#$%&*-+()", "!\"':;/?_=", "~<>[]{},")
+        else listOf("qwertyuiop", "asdfghjkl", "zxcvbnm")
+        rows.forEachIndexed { i, chars ->
+            rowsBox.addView(LinearLayout(context).apply {
+                orientation = HORIZONTAL
+                val pad = i == 1 && !symbols
+                if (pad) addView(View(context), LayoutParams(0, LayoutParams.MATCH_PARENT, 0.5f))
+                if (i == 2) addView(if (symbols) key("\\") { type("\\") } else shiftKey(), keyLp(1.5f))
+                chars.forEach { c ->
+                    val s = if (shift && !symbols) c.uppercaseChar().toString() else c.toString()
+                    addView(key(s) {
+                        type(s)
+                        if (shift && !capsLock) { shift = false; buildRows() } // Shift is for one letter
+                    }, keyLp(1f))
+                }
+                if (pad) addView(View(context), LayoutParams(0, LayoutParams.MATCH_PARENT, 0.5f))
+                if (i == 2) addView(iconKey(R.drawable.ic_backspace, onLong = { text.setLength(0); changed() }) {
+                    if (text.isNotEmpty()) text.setLength(text.length - 1)
+                    changed()
+                }, keyLp(1.5f))
+            }, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
+        }
+        modeKey.text = if (symbols) "ABC" else "?123"
+    }
+
+    /** Tap: next letter upper case. Long press: CAPS LOCK. */
+    private fun shiftKey() = key(if (capsLock) "⇪" else "⇧", accent = shift) {
+        shift = !shift
+        capsLock = false
+        buildRows()
+    }.apply {
+        setOnLongClickListener { shift = true; capsLock = true; buildRows(); true }
     }
 
     /**
-     * @param label what a search looks in ("YouTube", "Netflix"...); [suggest] shows YouTube's
+     * @param label what a search looks in ("YouTube", "Prime Video"); [suggest] shows YouTube's
      * suggestions; [secret] hides the typed text (password boxes: the car screen is visible to all).
      */
     fun open(initial: String, search: Boolean, label: String = "YouTube", suggest: Boolean = true, secret: Boolean = false) {
@@ -99,6 +136,10 @@ class CarKeyboard(
         searchLabel = label
         this.suggest = suggest && search
         this.secret = secret
+        shift = false
+        capsLock = false
+        symbols = false
+        buildRows()
         doneKey.text = if (search) "Search" else "Enter"
         visibility = VISIBLE
         changed()

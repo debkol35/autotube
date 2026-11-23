@@ -144,12 +144,14 @@ class MainActivity : Activity() {
         })
 
         // 5. Other services
-        col.addView(card("Netflix and Prime Video (optional)").apply {
-            addView(text("Adds an Apps button on the car screen to switch between YouTube, Netflix and Prime " +
-                "Video. Sign in here on the phone first. These services protect their videos (DRM), so on " +
-                "some phones or cars they may refuse to play, play in lower quality, or show a black picture.",
+        col.addView(card("Prime Video (optional)").apply {
+            addView(text("Adds an Apps button on the car screen to switch between YouTube and Prime Video. " +
+                "Sign in here on the phone first. Prime Video protects its videos (DRM), so on some phones " +
+                "or cars it may refuse to play, play in lower quality, or show a black picture.\n" +
+                "Netflix isn't offered: Netflix refuses to play in in-app browsers. Use the Netflix app on " +
+                "the car's own Android head unit instead, if it has one.",
                 14f, color = muted))
-            for (s in listOf(Service.NETFLIX, Service.PRIME)) {
+            for (s in listOf(Service.PRIME)) {
                 addView(Switch(this@MainActivity).apply {
                     text = "Show ${s.label} on the car screen"
                     setTextColor(fg)

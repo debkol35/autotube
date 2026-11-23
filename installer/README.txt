@@ -1,15 +1,14 @@
-AutoTube - YouTube (and optionally Netflix / Prime Video) on the Android Auto screen, when parked
-===============================================================================================
+AutoTube - YouTube (and optionally Prime Video) on the Android Auto screen, when parked
+======================================================================================
 
-Unofficial app. Not made by, endorsed by or affiliated with Google, YouTube, Netflix, Amazon or
-Android Auto.
+Unofficial app. Not made by, endorsed by or affiliated with Google, YouTube, Amazon or Android Auto.
 
 What it does
   Shows YouTube on your car's Android Auto display, with big buttons on the left (Back, Home,
   Search, Play/Pause, Full screen, Apps) and its own big keyboard with search suggestions.
   Works whether your phone has the original YouTube app or YouTube ReVanced (or neither): the car
   screen plays YouTube's mobile website inside AutoTube. On the phone you pick videos in either
-  app and tap Share > "Play in car (AutoTube)". Netflix and Prime Video can be switched on too.
+  app and tap Share > "Play in car (AutoTube)". Prime Video can be switched on too.
 
 Safety
   Driving lock (on by default): the picture is shown only while the phone's GPS says the car is
@@ -75,9 +74,11 @@ Using it
     "Use a different app" button chooses which one its "Pick a video" button opens.
   - Ads: video ads are muted, fast-forwarded and skipped and ad cards are hidden. Switch this
     off in AutoTube > Settings. (Skipping ads may be against YouTube's terms; your choice.)
-  - Netflix / Prime Video (optional, experimental): turn them on in AutoTube on the phone and
-    sign in there; the car screen then gets an Apps button. They protect their videos (DRM), so
-    on some phones or cars they may refuse to play, play in lower quality or show a black picture.
+  - Prime Video (optional, experimental): turn it on in AutoTube on the phone and sign in there;
+    the car screen then gets an Apps button. It protects its videos (DRM), so on some phones or
+    cars it may refuse to play, play in lower quality or show a black picture.
+  - Netflix is not offered: Netflix refuses to play in in-app browsers and blocks screen
+    mirroring. If your car has an Android head unit, use the Netflix app on the head unit.
   - It remembers the last video and resumes there next time.
 
 If something goes wrong in the car
@@ -96,7 +97,7 @@ If AutoTube is missing from Android Auto
 
 Privacy
   No AutoTube account, no analytics. Location stays on the phone (only used for the parked
-  check). The sites (YouTube, Netflix, Prime Video) and YouTube's search suggestions are loaded
+  check). The sites (YouTube, Prime Video) and YouTube's search suggestions are loaded
   directly from those services, as in any browser.
 
 No warranty. Use at your own risk.

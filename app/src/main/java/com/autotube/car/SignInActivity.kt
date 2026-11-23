@@ -10,7 +10,7 @@ import android.webkit.WebViewClient
 import android.widget.Toast
 
 /**
- * Sign in to YouTube, Netflix or Prime Video here on the phone, with the phone's own keyboard.
+ * Sign in to YouTube or Prime Video here on the phone, with the phone's own keyboard.
  * The car screen runs in the same app, so it shares these cookies (and so the login).
  * Uses the same user agent as the car screen, so the site sees the same kind of browser.
  */

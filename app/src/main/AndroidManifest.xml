@@ -94,7 +94,7 @@
             </intent-filter>
         </activity>
 
-        <!-- Signs in to YouTube / Netflix / Prime Video on the phone (the car screen shares the cookies). -->
+        <!-- Signs in to YouTube / Prime Video on the phone (the car screen shares the cookies). -->
         <activity
             android:name=".SignInActivity"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden"

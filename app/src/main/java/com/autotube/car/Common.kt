@@ -80,20 +80,19 @@ class Prefs(ctx: Context) {
 }
 
 /**
- * What the car screen can show. YouTube uses its mobile site; Netflix and Prime Video only serve
- * their web player to desktop browsers, so those get a desktop user agent and DRM (Widevine).
+ * What the car screen can show. YouTube uses its mobile site; Prime Video only serves its web
+ * player to desktop browsers, so it gets a desktop user agent and DRM (Widevine).
+ * (Netflix is not offered: its licence check refuses in-app browsers, error M7111-1957-2050xx.)
  */
 enum class Service(val id: String, val label: String, val home: String, val signIn: String, val desktop: Boolean) {
     YOUTUBE("youtube", "YouTube", "https://m.youtube.com/",
         "https://accounts.google.com/ServiceLogin?service=youtube&continue=https%3A%2F%2Fm.youtube.com%2F", false),
-    NETFLIX("netflix", "Netflix", "https://www.netflix.com/browse", "https://www.netflix.com/login", true),
     PRIME("prime", "Prime Video", "https://www.primevideo.com/", "https://www.primevideo.com/", true);
 
     fun search(q: String): String {
         val e = URLEncoder.encode(q.trim(), "UTF-8")
         return when (this) {
             YOUTUBE -> YouTubeLinks.search(q)
-            NETFLIX -> "https://www.netflix.com/search?q=$e"
             PRIME -> "https://www.primevideo.com/search/ref=atv_nb_sug?ie=UTF8&phrase=$e"
         }
     }
@@ -103,7 +102,6 @@ enum class Service(val id: String, val label: String, val home: String, val sign
             val host = try { Uri.parse(url ?: "").host?.lowercase() ?: "" } catch (e: Exception) { "" }
             fun on(domain: String) = host == domain || host.endsWith(".$domain")
             return when {
-                on("netflix.com") -> NETFLIX
                 on("primevideo.com") || Regex("(^|\\.)amazon\\.[a-z.]+$").containsMatchIn(host) -> PRIME
                 else -> YOUTUBE
             }

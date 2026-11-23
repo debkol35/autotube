@@ -36,7 +36,7 @@ import android.widget.TextView
 import org.json.JSONObject
 
 /**
- * The car screen: YouTube's mobile site (or Netflix / Prime Video, if turned on) in a WebView, a
+ * The car screen: YouTube's mobile site (or Prime Video, if turned on) in a WebView, a
  * rail of big buttons on the left (made for wide car displays), our own keyboard, a full-screen
  * video mode and the driving cover. Used by both the Android Auto CarActivity and the phone preview.
  */
@@ -154,7 +154,7 @@ class CarScreen(ctx: Context, private val inCar: Boolean) : FrameLayout(ctx) {
         railButton(R.drawable.ic_search, "Search") { if (!blockedWhileLocked()) openSearch() }
         playBtn = railButton(R.drawable.ic_play, "Play or pause") { togglePlay() }
         fullBtn = railButton(R.drawable.ic_fit, "Full screen video") { if (!blockedWhileLocked()) setFull(true) }
-        appsBtn = railButton(R.drawable.ic_apps, "YouTube, Netflix, Prime Video") { if (!blockedWhileLocked()) showApps() }
+        appsBtn = railButton(R.drawable.ic_apps, "YouTube or Prime Video") { if (!blockedWhileLocked()) showApps() }
         updateAppsButton()
 
         setupWeb(web)
@@ -225,7 +225,7 @@ class CarScreen(ctx: Context, private val inCar: Boolean) : FrameLayout(ctx) {
         load(url)
     }
 
-    /** Loads [url] with the user agent its site needs (desktop for Netflix / Prime Video). */
+    /** Loads [url] with the user agent its site needs (desktop for Prime Video). */
     private fun load(url: String) {
         val ua = userAgentFor(url)
         if (web.settings.userAgentString != ua) web.settings.userAgentString = ua
@@ -314,7 +314,6 @@ class CarScreen(ctx: Context, private val inCar: Boolean) : FrameLayout(ctx) {
                 typeface = Typeface.DEFAULT_BOLD
                 val c = when (s) {
                     Service.YOUTUBE -> 0xFFB3261E.toInt()
-                    Service.NETFLIX -> 0xFF8E0A12.toInt()
                     Service.PRIME -> 0xFF1A6FB0.toInt()
                 }
                 background = context.pressable(c, 0xFF3A3E41.toInt(), 18)
@@ -499,7 +498,7 @@ class CarScreen(ctx: Context, private val inCar: Boolean) : FrameLayout(ctx) {
             val u = req.url
             when (u.scheme?.lowercase()) {
                 "http", "https" -> {
-                    // Crossing between YouTube and Netflix / Prime Video needs the other user agent.
+                    // Crossing between YouTube and Prime Video needs the other user agent.
                     if (!req.isForMainFrame || userAgentFor(u.toString()) == view.settings.userAgentString) return false
                     main.post { load(u.toString()) }
                 }
@@ -560,7 +559,7 @@ class CarScreen(ctx: Context, private val inCar: Boolean) : FrameLayout(ctx) {
         override fun onJsConfirm(v: WebView, url: String?, msg: String?, r: JsResult): Boolean { r.confirm(); return true }
         override fun onJsBeforeUnload(v: WebView, url: String?, msg: String?, r: JsResult): Boolean { r.confirm(); return true }
 
-        // Netflix / Prime Video (and paid YouTube films) need DRM (Widevine); nothing else is granted.
+        // Prime Video (and paid YouTube films) need DRM (Widevine); nothing else is granted.
         override fun onPermissionRequest(request: PermissionRequest) {
             val drm = PermissionRequest.RESOURCE_PROTECTED_MEDIA_ID
             val s = Service.forUrl(request.origin?.toString())
