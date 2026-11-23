@@ -49,8 +49,10 @@ class MainActivity : Activity() {
     private lateinit var changeAppButton: Button
     private lateinit var pickTip: TextView
     private lateinit var adsSwitch: Switch
+    private lateinit var lockSwitch: Switch
     private lateinit var shizukuButton: Button
     private lateinit var shizukuHint: TextView
+    private lateinit var phoneHint: TextView
     private val shizukuListener = rikka.shizuku.Shizuku.OnRequestPermissionResultListener { code, result ->
         if (code == REQ_SHIZUKU) runOnUiThread {
             if (result == PackageManager.PERMISSION_GRANTED) runShizukuInstall() else refresh()
@@ -74,18 +76,19 @@ class MainActivity : Activity() {
             installStatus = text("", 16f, bold = true)
             addView(installStatus)
             addView(text("Android Auto only lists full-screen apps that its Play Store check accepts. AutoTube " +
-                "reinstalls itself through the phone's own installer with Play Store recorded. Newer Android " +
-                "only allows that with \"shell\" rights, so use one of these (and again after every update):\n" +
-                "• No computer: the free Shizuku app (needs Wi-Fi for Wireless debugging). The button below " +
-                "walks you through it.\n" +
-                "• Computer: the AutoTube installer from the release zip, with this phone plugged in.",
+                "reinstalls itself through the phone's own installer with Play Store recorded: tap the " +
+                "button, then \"Update\". Do it again after every AutoTube update.\n" +
+                "Some phones refuse that request from an app. Then use Shizuku (free app, no computer, " +
+                "needs Wi-Fi for Wireless debugging) or the computer installer from the release zip.",
                 14f, color = muted).pad())
-            shizukuButton = button("Set up without a computer") { shizukuSetup() }
+            installButton = button("Set up on this phone") { directSetup() }
+            addView(installButton)
+            phoneHint = text("", 13f, color = muted).pad()
+            addView(phoneHint)
+            shizukuButton = button("Set up with Shizuku", primary = false) { shizukuSetup() }
             addView(shizukuButton)
             shizukuHint = text("", 13f, color = muted).pad()
             addView(shizukuHint)
-            installButton = button("Try it from the phone (Android 13 and older)", primary = false) { reinstallSelf() }
-            addView(installButton)
             installDetail = text("", 12f, color = muted).pad()
             addView(installDetail)
         })
@@ -99,11 +102,19 @@ class MainActivity : Activity() {
             addView(button("Open Android Auto settings", primary = false) { openAndroidAuto() })
         })
 
-        // 3. Driving safety (always on)
-        col.addView(card("3 · Location for the driving lock").apply {
-            addView(text("Video is shown only while the phone's GPS says the car is parked. While driving the " +
+        // 3. Driving lock
+        col.addView(card("3 · Driving lock").apply {
+            lockSwitch = Switch(this@MainActivity).apply {
+                text = "Hide video while the car moves"
+                setTextColor(fg)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+                isChecked = prefs.driveLock
+                setOnCheckedChangeListener { sw, on -> if (on) { prefs.driveLock = true; refresh() } else confirmLockOff(sw) }
+            }
+            addView(lockSwitch, LinearLayout.LayoutParams(MATCH, WRAP))
+            addView(text("Uses the phone's GPS: video is shown only while the car is parked. While driving the " +
                 "picture is covered and the sound keeps playing; it comes back a few seconds after you stop. " +
-                "Without location, the picture stays covered.", 14f, color = muted))
+                "Without location, the picture stays covered. Passengers can turn this off.", 14f, color = muted).pad())
             locationStatus = text("", 14f, bold = true).pad()
             addView(locationStatus)
             locationButton = button("Allow location") { askLocation() }
@@ -186,6 +197,7 @@ class MainActivity : Activity() {
 
         if (!prefs.noticeAccepted) showNotice()
         try { rikka.shizuku.Shizuku.addRequestPermissionResultListener(shizukuListener) } catch (e: Throwable) {}
+        setupIfAsked(intent)
     }
 
     override fun onDestroy() {
@@ -204,8 +216,9 @@ class MainActivity : Activity() {
             .setMessage(
                 "• AutoTube is an unofficial app. It is not made by, endorsed by or affiliated with Google, " +
                     "YouTube or Android Auto.\n\n" +
-                    "• Video shows on the car screen only while the phone's GPS says the car is parked. " +
-                    "Never watch or operate it while driving, and follow your local laws.\n\n" +
+                    "• By default video shows on the car screen only while the phone's GPS says the car is " +
+                    "parked (driving lock; passengers can turn it off). Never watch or operate it while " +
+                    "driving, and follow your local laws.\n\n" +
                     "• It shows YouTube's mobile website and, if you leave it on, skips ads. YouTube's terms " +
                     "apply to your use of YouTube.\n\n" +
                     "• Use at your own risk; it comes with no warranty."
@@ -221,15 +234,22 @@ class MainActivity : Activity() {
         if (s.ok) {
             installStatus.text = "✓ Ready: Android Auto sees AutoTube as a Play Store app"
             installStatus.setTextColor(good)
-            installButton.visibility = View.GONE
-            shizukuButton.text = "Redo setup without a computer"
-            shizukuButton.visibility = View.VISIBLE
+            installButton.text = "Redo setup on this phone"
+            prefs.directSetupTried = false
         } else {
             installStatus.text = "✗ Not yet: Android Auto will hide AutoTube"
             installStatus.setTextColor(bad)
-            installButton.visibility = View.VISIBLE
-            shizukuButton.text = "Set up without a computer"
+            installButton.text = "Set up on this phone"
         }
+        phoneHint.text = when {
+            s.ok -> ""
+            prefs.directSetupTried && s.initiator == Installer.SYSTEM_INSTALLER ->
+                "This phone's installer ignored the request from AutoTube. Use Shizuku below (no " +
+                    "computer) or the computer installer."
+            !Installer.canInstall(this) -> "It first asks you to allow AutoTube to install apps (used only for this)."
+            else -> ""
+        }
+        phoneHint.visibility = if (phoneHint.text.isEmpty()) View.GONE else View.VISIBLE
         shizukuHint.text = when (ShizukuSetup.step(this)) {
             ShizukuSetup.Step.NOT_INSTALLED -> "Next: install Shizuku (the button opens Play Store)."
             ShizukuSetup.Step.NOT_RUNNING -> "Next: start Shizuku (open it > \"Start via Wireless debugging\"; " +
@@ -242,14 +262,20 @@ class MainActivity : Activity() {
             when {
                 s.ok -> ""
                 s.initiator == Installer.SYSTEM_INSTALLER ->
-                    "\nThis phone's installer ignored the Play Store request (Android 14 and newer do). " +
-                        "Use the installer script on a computer."
-                else -> "\nRun the installer script on a computer with this phone plugged in."
+                    "\nThe installer didn't record Play Store. Try \"Set up on this phone\"; if it stays " +
+                        "like this, use Shizuku or the computer installer."
+                else -> "\nTap \"Set up on this phone\" above."
             }
 
         val fine = DriveGuard.hasLocation(this)
         val always = DriveGuard.hasBackgroundLocation(this)
+        lockSwitch.isChecked = prefs.driveLock
         when {
+            !prefs.driveLock -> {
+                locationStatus.text = "Driving lock is off: video also plays while the car moves (passengers only)"
+                locationStatus.setTextColor(bad)
+                locationButton.visibility = View.GONE
+            }
             fine && always -> {
                 locationStatus.text = "✓ Location: allowed all the time"
                 locationStatus.setTextColor(good)
@@ -292,14 +318,30 @@ class MainActivity : Activity() {
 
     // ---------------------------------------------------------------- actions
 
-    private fun reinstallSelf() {
+    /** AutoTube asks the phone's installer itself (accepted by the newer installer and Android 13-). */
+    private fun directSetup() {
         if (!Installer.canInstall(this)) {
             toast("Turn on \"Allow from this source\" for AutoTube, then come back and tap again")
             Installer.openInstallPermission(this)
             return
         }
-        toast("Tap Install / Update. AutoTube closes while it reinstalls; open it again afterwards")
+        prefs.directSetupTried = true
+        CarLog.add(this, "direct setup requested")
+        toast("Tap \"Update\". AutoTube closes while it reinstalls; open it again afterwards")
         Installer.install(this, Installer.selfApk(this))
+    }
+
+    override fun onNewIntent(i: Intent) {
+        super.onNewIntent(i)
+        setIntent(i)
+        setupIfAsked(i)
+    }
+
+    /** The computer installer opens AutoTube with this extra on phones whose installer wants it. */
+    private fun setupIfAsked(i: Intent?) {
+        if (i?.getBooleanExtra(EXTRA_SETUP, false) != true) return
+        i.removeExtra(EXTRA_SETUP)
+        directSetup()
     }
 
     private fun shizukuSetup() {
@@ -318,13 +360,17 @@ class MainActivity : Activity() {
     }
 
     private fun runShizukuInstall() {
-        val cmd = Installer.shellCommand(this)
         Thread {
-            val (code, out) = try { ShizukuSetup.run(cmd) } catch (e: Throwable) { -1 to (e.cause ?: e).toString() }
-            CarLog.add(this, "shizuku setup: exit=$code ${out.take(300)}")
+            val result = try {
+                if (ShizukuSetup.setup(this)) "self" else "shell"
+            } catch (e: Throwable) { "error: " + (e.cause ?: e) }
+            CarLog.add(this, "shizuku setup: $result")
             runOnUiThread {
-                if (code == 0) toast("Tap \"Update\" on the next screen. If Play Protect asks: More details > Install without scanning")
-                else toast("Shizuku couldn't open the installer: $out")
+                when {
+                    result == "self" -> directSetup() // newer installer: AutoTube must ask itself
+                    result == "shell" -> toast("Tap \"Update\" on the next screen. If Play Protect asks: More details > Install without scanning")
+                    else -> toast("Shizuku couldn't open the installer: $result")
+                }
             }
         }.start()
     }
@@ -390,6 +436,18 @@ class MainActivity : Activity() {
             askLocation() // second step: "all the time"
         }
         refresh()
+    }
+
+    private fun confirmLockOff(sw: android.widget.CompoundButton) {
+        AlertDialog.Builder(this)
+            .setTitle("Turn off the driving lock?")
+            .setMessage("Video will also show while the car is moving. Only for passengers: the driver must " +
+                "never watch video while driving, and in many places a screen visible to the driver must " +
+                "not show video at all. You are responsible for following your local laws.")
+            .setPositiveButton("Turn off") { _, _ -> prefs.driveLock = false; refresh() }
+            .setNegativeButton("Keep on") { _, _ -> sw.isChecked = true }
+            .setOnCancelListener { sw.isChecked = true }
+            .show()
     }
 
     private fun pickInApp() {
@@ -474,5 +532,6 @@ class MainActivity : Activity() {
         private const val REQ_LOC = 2
         private const val REQ_BG_LOC = 3
         private const val REQ_SHIZUKU = 4
+        const val EXTRA_SETUP = "com.autotube.car.SETUP"
     }
 }

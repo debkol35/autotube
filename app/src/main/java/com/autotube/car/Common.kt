@@ -32,6 +32,14 @@ class Prefs(ctx: Context) {
         get() = p.getBoolean("noticeAccepted", false)
         set(v) = p.edit().putBoolean("noticeAccepted", v).apply()
 
+    /**
+     * Driving lock: hide the picture unless the phone's GPS says the car is parked. On by default;
+     * the user can turn it off (passengers), after a warning.
+     */
+    var driveLock: Boolean
+        get() = p.getBoolean("driveLock", true)
+        set(v) = p.edit().putBoolean("driveLock", v).apply()
+
     /** Skip / hide YouTube ads in the car player. */
     var skipAds: Boolean
         get() = p.getBoolean("skipAds", true)
@@ -41,6 +49,11 @@ class Prefs(ctx: Context) {
     var youtubeApp: String?
         get() = p.getString("youtubeApp", null)
         set(v) = p.edit().putString("youtubeApp", v).apply()
+
+    /** "Set up on this phone" was tried; if the record still isn't right, the phone refused it. */
+    var directSetupTried: Boolean
+        get() = p.getBoolean("directSetupTried", false)
+        set(v) = p.edit().putBoolean("directSetupTried", v).apply()
 
     /** Extra services offered on the car screen's Apps button (off until the user turns them on). */
     fun serviceOn(s: Service): Boolean = s == Service.YOUTUBE || p.getBoolean("on_" + s.id, false)

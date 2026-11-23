@@ -72,8 +72,12 @@ class CarScreen(ctx: Context, private val inCar: Boolean) : FrameLayout(ctx) {
     private val hideToast = Runnable { toastView.visibility = GONE }
     private val hideFullBar = Runnable { fullBar.visibility = GONE }
 
-    /** The picture (and browsing) is allowed only once the phone's GPS says the car is parked. */
-    private val locked get() = !prefs.noticeAccepted || guard.state != DriveGuard.State.PARKED
+    /**
+     * The picture (and browsing) is allowed only once the phone's GPS says the car is parked,
+     * unless the user turned the driving lock off on the phone.
+     */
+    private val locked get() =
+        !prefs.noticeAccepted || (prefs.driveLock && guard.state != DriveGuard.State.PARKED)
 
     /** The service of the page on screen (decides home, search and user agent). */
     private val service get() = Service.forUrl(web.url ?: prefs.lastUrl)

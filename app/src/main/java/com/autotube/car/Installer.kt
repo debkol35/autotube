@@ -58,7 +58,7 @@ object Installer {
         @Suppress("DEPRECATION")
         val i = Intent(Intent.ACTION_INSTALL_PACKAGE)
             .setDataAndType(apk, APK_MIME)
-            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
             .putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
             .putExtra(Intent.EXTRA_INSTALLER_PACKAGE_NAME, PLAY)
             .putExtra(Intent.EXTRA_RETURN_RESULT, false)
@@ -66,6 +66,14 @@ object Installer {
     }
 
     fun selfApk(ctx: Context): Uri = Uri.parse("content://${ctx.packageName}.apk/${ApkProvider.SELF}")
+
+    /**
+     * Which caller the phone's installer accepts the Play Store request from depends on its
+     * version: the classic installer only from callers with install rights (adb shell /
+     * Shizuku); the newer one ("PIA v2", e.g. Android 17 builds) only from ordinary apps, i.e.
+     * from AutoTube itself. It logs this line when it drops the request.
+     */
+    const val REJECTED_LOG = "is invalid. Remove it"
 
     /** The command the computer installers run with adb (shell is allowed to name Play Store). */
     fun shellCommand(ctx: Context) =
@@ -104,6 +112,24 @@ object ShizukuSetup {
     } catch (e: Throwable) { false }
 
     fun requestPermission(code: Int) = try { rikka.shizuku.Shizuku.requestPermission(code) } catch (e: Throwable) {}
+
+    /**
+     * The shell route, with a fallback for the newer installer: if it drops the Play Store request
+     * from shell (it logs [Installer.REJECTED_LOG]), close it and let AutoTube ask itself instead,
+     * after allowing AutoTube to install apps.
+     * @return true if AutoTube should now make the request itself.
+     */
+    fun setup(ctx: Context): Boolean {
+        // Only log lines from now on (the phone's log is left alone).
+        val since = java.text.SimpleDateFormat("MM-dd HH:mm:ss.SSS", java.util.Locale.US).format(java.util.Date())
+        run(Installer.shellCommand(ctx))
+        Thread.sleep(2500)
+        val log = run("logcat -d -t '$since' -s InstallRepository:E").second
+        if (Installer.REJECTED_LOG !in log) return false
+        run("am force-stop com.google.android.packageinstaller")
+        run("appops set --user 0 ${ctx.packageName} REQUEST_INSTALL_PACKAGES allow")
+        return true
+    }
 
     /** Runs [cmd] as Shizuku's user (shell). @return exit code and output. */
     fun run(cmd: String): Pair<Int, String> {

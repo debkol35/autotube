@@ -12,34 +12,36 @@ What it does
   app and tap Share > "Play in car (AutoTube)". Netflix and Prime Video can be switched on too.
 
 Safety
-  The picture is shown only while the phone's GPS says the car is parked. While driving it is
-  covered and the sound keeps playing. Without location permission or GPS, the picture stays
-  covered. Never watch video while driving, and follow your local laws.
+  Driving lock (on by default): the picture is shown only while the phone's GPS says the car is
+  parked. While driving it is covered and the sound keeps playing. Without location permission or
+  GPS, the picture stays covered. Passengers can turn it off in AutoTube on the phone (step 3).
+  Never watch video while driving, and follow your local laws.
 
 You need
   - An Android phone with Android 10 or newer and Android Auto. (Tested so far on a Samsung
     Galaxy with Android 17 / Android Auto 18.0, in an aftermarket head unit.)
-  - EITHER Wi-Fi and the free Shizuku app (no computer), OR a computer with a USB cable.
+  - Usually nothing else. Some phones need the free Shizuku app (and Wi-Fi) or a computer.
 
 Install - option A: phone only (no computer)
   Why the extra step: Android Auto only lists full-screen apps that its Play Store check
-  accepts. AutoTube can make the phone's installer record that, but newer Android only allows it
-  with "shell" rights, which Shizuku provides (started once with Android's Wireless debugging).
+  accepts. AutoTube makes the phone's own installer record that, by reinstalling itself.
 
   1. Download AutoTube-vX.Y.apk on the phone and install it (allow your browser / file manager
      to install apps if asked).
   2. Open AutoTube, read the notice, tap "I understand".
-  3. Step 1 in AutoTube: tap "Set up without a computer". It walks you through:
+  3. Step 1 in AutoTube: tap "Set up on this phone". The first time it asks you to allow AutoTube
+     to install apps (only used for this): allow it, come back, tap the button again.
+     Tap "Update" on the installer screen. If Play Protect asks: "More details" >
+     "Install without scanning" (or "Install anyway").
+  4. Open AutoTube again: step 1 must show a green "Ready". Done.
+  If step 1 says the phone ignored the request (phones with the older installer accept it only
+  from "shell"), use "Set up with Shizuku" in AutoTube instead. It walks you through:
      a. installing Shizuku from Play Store,
      b. starting Shizuku: open Shizuku > "Start via Wireless debugging" and follow its pairing
         guide (needs Wi-Fi; Developer options must be on: Settings > About phone > tap
         "Build number" 7 times),
-     c. back in AutoTube, tap the button again and allow AutoTube in Shizuku's prompt,
-     d. tap "Update" on the installer screen. If Play Protect asks: "More details" >
-        "Install without scanning" (or "Install anyway").
-  4. AutoTube's step 1 must show a green "Ready".
-  For every AutoTube update: install the new APK, then repeat step 3 (Shizuku may need starting
-  again after a phone restart).
+     c. back in AutoTube, tap the button again, allow AutoTube in Shizuku's prompt, tap "Update".
+  For every AutoTube update: install the new APK, then repeat step 3.
 
 Install - option B: with a computer
   1. On the phone: Settings > About phone > tap "Build number" 7 times, then
@@ -51,7 +53,9 @@ Install - option B: with a computer
        from dl.google.com (about 8 MB).
      - On the phone, tap "Allow" on "Allow USB debugging?" if asked.
   4. When the phone shows the installer, tap "Update" (Play Protect: as above).
-  5. The installer must end with "Done: Android Auto will accept AutoTube."
+  5. The installer must end with "Done: Android Auto will accept AutoTube." (On phones whose
+     installer only accepts the request from AutoTube itself, the installer notices and opens
+     AutoTube to make it; you still just tap "Update".)
   Repeat for every AutoTube update.
 
 Set up on the phone (once)

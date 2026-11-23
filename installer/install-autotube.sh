@@ -107,10 +107,20 @@ fi
 say; say "2/2 Opening the phone's installer to record Play Store..."
 "$ADB" "${T[@]}" shell input keyevent KEYCODE_WAKEUP >/dev/null 2>&1
 "$ADB" "${T[@]}" shell am force-stop "$PKG"
+SINCE="$("$ADB" "${T[@]}" shell "date '+%m-%d %H:%M:%S.000'" | tr -d '')"
 "$ADB" "${T[@]}" shell am start --activity-clear-task -a android.intent.action.INSTALL_PACKAGE \
   -d "content://$PKG.apk/self.apk" -t application/vnd.android.package-archive \
   --es android.intent.extra.INSTALLER_PACKAGE_NAME com.android.vending \
   --ez android.intent.extra.NOT_UNKNOWN_SOURCE true >/dev/null
+# Newer phone installers ("PIA v2") drop the Play Store request when it comes from adb, and only
+# accept it from AutoTube itself. They log this; then let AutoTube ask (allowed to install apps).
+sleep 3
+if "$ADB" "${T[@]}" shell "logcat -d -t '$SINCE' -s InstallRepository:E" 2>/dev/null | grep -q "is invalid. Remove it"; then
+  say "This phone's installer only accepts the request from AutoTube itself: asking AutoTube to do it."
+  "$ADB" "${T[@]}" shell am force-stop com.google.android.packageinstaller
+  "$ADB" "${T[@]}" shell appops set --user 0 "$PKG" REQUEST_INSTALL_PACKAGES allow
+  "$ADB" "${T[@]}" shell am start -n "$PKG/.MainActivity" --ez com.autotube.car.SETUP true >/dev/null
+fi
 warn ">>> On the PHONE: unlock it and tap 'Update'."
 warn "    If Play Protect asks: 'More details' > 'Install without scanning' (or 'Install anyway')."
 

@@ -123,10 +123,21 @@ if ($LASTEXITCODE -ne 0) {
 Say "`n2/2 Opening the phone's installer to record Play Store..." Cyan
 & $adb @target shell input keyevent KEYCODE_WAKEUP 2>$null | Out-Null
 & $adb @target shell am force-stop $pkg
+$since = (& $adb @target shell "date '+%m-%d %H:%M:%S.000'") -join ""
 & $adb @target shell am start --activity-clear-task -a android.intent.action.INSTALL_PACKAGE `
     -d "content://$pkg.apk/self.apk" -t application/vnd.android.package-archive `
     --es android.intent.extra.INSTALLER_PACKAGE_NAME com.android.vending `
     --ez android.intent.extra.NOT_UNKNOWN_SOURCE true | Out-Null
+# Newer phone installers ("PIA v2") drop the Play Store request when it comes from adb, and only
+# accept it from AutoTube itself. They log this; then let AutoTube ask (allowed to install apps).
+Start-Sleep -Seconds 3
+$rejected = (& $adb @target shell "logcat -d -t '$since' -s InstallRepository:E" 2>$null) -join "`n"
+if ($rejected -match "is invalid. Remove it") {
+    Say "This phone's installer only accepts the request from AutoTube itself: asking AutoTube to do it." Cyan
+    & $adb @target shell am force-stop com.google.android.packageinstaller
+    & $adb @target shell appops set --user 0 $pkg REQUEST_INSTALL_PACKAGES allow
+    & $adb @target shell am start -n "$pkg/.MainActivity" --ez com.autotube.car.SETUP true | Out-Null
+}
 Say ">>> On the PHONE: unlock it and tap 'Update'." Yellow
 Say "    If Play Protect asks: 'More details' > 'Install without scanning' (or 'Install anyway')." Yellow
 
