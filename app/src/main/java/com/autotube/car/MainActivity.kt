@@ -50,6 +50,8 @@ class MainActivity : Activity() {
     private lateinit var pickTip: TextView
     private lateinit var adsSwitch: Switch
     private lateinit var lockSwitch: Switch
+    private lateinit var adListStatus: TextView
+    @Volatile private var adListUpdating = false
     private lateinit var shizukuButton: Button
     private lateinit var shizukuHint: TextView
     private lateinit var phoneHint: TextView
@@ -167,7 +169,24 @@ class MainActivity : Activity() {
                 12f, color = muted).pad())
         })
 
-        // 6. Settings
+        // 6. Web browser
+        col.addView(card("Web browser").apply {
+            addView(text("On the car screen, Apps → Browser opens any website: music, radio, videos, " +
+                "films. Tap the address bar (or the magnifier) to search or type an address; the star keeps " +
+                "a site on the start page.", 14f, color = muted))
+            addView(switch("Show the browser on the car screen", prefs.serviceOn(Service.WEB)) {
+                prefs.setServiceOn(Service.WEB, it)
+            }, LinearLayout.LayoutParams(MATCH, WRAP))
+            addView(switch("Block ads in the browser", prefs.adBlock) { prefs.adBlock = it; refresh() },
+                LinearLayout.LayoutParams(MATCH, WRAP))
+            addView(text("Blocks ad, tracker and pop-up sites (not on YouTube / Prime Video, which have their " +
+                "own handling).", 13f, color = muted).pad())
+            adListStatus = text("", 13f, color = muted).pad()
+            addView(adListStatus)
+            addView(button("Update the ad block list", primary = false) { updateAdList(quiet = false) })
+        })
+
+        // 7. Settings
         col.addView(card("Settings").apply {
             adsSwitch = Switch(this@MainActivity).apply {
                 text = "Skip YouTube ads on the car screen"
@@ -210,6 +229,33 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         refresh()
+        // Keep the browser's ad block list fresh (weekly, in the background).
+        if (prefs.adBlock && System.currentTimeMillis() - prefs.adBlockUpdated > 7L * 24 * 3600 * 1000) updateAdList(quiet = true)
+    }
+
+    private fun updateAdList(quiet: Boolean) {
+        if (adListUpdating) return
+        adListUpdating = true
+        if (!quiet) toast("Downloading the ad block list…")
+        refresh()
+        Thread {
+            AdBlock.ensureLoaded(applicationContext)
+            val n = AdBlock.update(applicationContext)
+            adListUpdating = false
+            runOnUiThread {
+                if (!quiet) toast(if (n > 0) "Ad block list updated: %,d sites".format(n) else "Couldn't download the list. Check the internet and try again")
+                if (!isFinishing) refresh()
+            }
+        }.start()
+    }
+
+    private fun switch(label: String, on: Boolean, onChange: (Boolean) -> Unit) = Switch(this).apply {
+        text = label
+        setTextColor(fg)
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+        isChecked = on
+        setOnCheckedChangeListener { _, v -> onChange(v) }
+        setPadding(0, dp(10), 0, 0)
     }
 
     private fun showNotice() {
@@ -314,6 +360,14 @@ class MainActivity : Activity() {
         changeAppButton.visibility = if (apps.size > 1) View.VISIBLE else View.GONE
         adsSwitch.isChecked = prefs.skipAds
 
+        adListStatus.text = when {
+            !prefs.adBlock -> "Ad blocking is off."
+            adListUpdating -> "Downloading the ad block list…"
+            prefs.adBlockUpdated == 0L -> "Using the built-in list (main ad networks). The full list downloads automatically."
+            else -> "Full list (StevenBlack hosts), updated " +
+                java.text.SimpleDateFormat("d MMM", java.util.Locale.getDefault()).format(java.util.Date(prefs.adBlockUpdated)) +
+                (if (AdBlock.size > 1000) " · %,d sites".format(AdBlock.size) else "")
+        }
         carStatus.text = if (Bridge.carScreenOpen) "Car screen is open: links play right away"
         else "Car screen is closed: a sent link waits and plays when you open AutoTube in the car"
     }

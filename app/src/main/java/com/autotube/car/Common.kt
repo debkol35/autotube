@@ -55,12 +55,36 @@ class Prefs(ctx: Context) {
         get() = p.getBoolean("directSetupTried", false)
         set(v) = p.edit().putBoolean("directSetupTried", v).apply()
 
-    /** Extra services offered on the car screen's Apps button (off until the user turns them on). */
-    fun serviceOn(s: Service): Boolean = s == Service.YOUTUBE || p.getBoolean("on_" + s.id, false)
+    /** Services offered on the car screen's Apps button (YouTube always; the browser on by default). */
+    fun serviceOn(s: Service): Boolean = s == Service.YOUTUBE || p.getBoolean("on_" + s.id, s == Service.WEB)
 
     fun setServiceOn(s: Service, on: Boolean) = p.edit().putBoolean("on_" + s.id, on).apply()
 
     val services: List<Service> get() = Service.values().filter { serviceOn(it) }
+
+    /** Browser: block ads (requests to ad domains, ad boxes, pop-ups). */
+    var adBlock: Boolean
+        get() = p.getBoolean("adBlock", true)
+        set(v) = p.edit().putBoolean("adBlock", v).apply()
+
+    /** When the full ad block list was last downloaded (0 = never). */
+    var adBlockUpdated: Long
+        get() = p.getLong("adBlockUpdated", 0)
+        set(v) = p.edit().putLong("adBlockUpdated", v).apply()
+
+    /** Browser: ask sites for their desktop version. */
+    var webDesktop: Boolean
+        get() = p.getBoolean("webDesktop", false)
+        set(v) = p.edit().putBoolean("webDesktop", v).apply()
+
+    /** Browser bookmarks, shown on its start page: (title, url). */
+    var bookmarks: List<Pair<String, String>>
+        get() = try {
+            val a = org.json.JSONArray(p.getString("bookmarks", "[]"))
+            (0 until a.length()).map { a.getJSONArray(it).let { e -> e.getString(0) to e.getString(1) } }
+        } catch (e: Exception) { emptyList() }
+        set(v) = p.edit().putString("bookmarks",
+            org.json.JSONArray(v.map { org.json.JSONArray(listOf(it.first, it.second)) }).toString()).apply()
 
     var lastUrl: String?
         get() = p.getString("lastUrl", null)
@@ -87,13 +111,15 @@ class Prefs(ctx: Context) {
 enum class Service(val id: String, val label: String, val home: String, val signIn: String, val desktop: Boolean) {
     YOUTUBE("youtube", "YouTube", "https://m.youtube.com/",
         "https://accounts.google.com/ServiceLogin?service=youtube&continue=https%3A%2F%2Fm.youtube.com%2F", false),
-    PRIME("prime", "Prime Video", "https://www.primevideo.com/", "https://www.primevideo.com/", true);
+    PRIME("prime", "Prime Video", "https://www.primevideo.com/", "https://www.primevideo.com/", true),
+    WEB("web", "Browser", "https://autotube.start/", "", false); // home = START_URL
 
     fun search(q: String): String {
         val e = URLEncoder.encode(q.trim(), "UTF-8")
         return when (this) {
             YOUTUBE -> YouTubeLinks.search(q)
             PRIME -> "https://www.primevideo.com/search/ref=atv_nb_sug?ie=UTF8&phrase=$e"
+            WEB -> "https://www.google.com/search?q=$e"
         }
     }
 
@@ -102,9 +128,24 @@ enum class Service(val id: String, val label: String, val home: String, val sign
             val host = try { Uri.parse(url ?: "").host?.lowercase() ?: "" } catch (e: Exception) { "" }
             fun on(domain: String) = host == domain || host.endsWith(".$domain")
             return when {
+                on("youtube.com") || on("youtu.be") || on("youtube-nocookie.com") -> YOUTUBE
                 on("primevideo.com") || Regex("(^|\\.)amazon\\.[a-z.]+$").containsMatchIn(host) -> PRIME
-                else -> YOUTUBE
+                else -> WEB
             }
+        }
+
+        /** The browser's start page (rendered by AutoTube, never fetched). */
+        const val START_URL = "https://autotube.start/"
+
+        /** "example.com", "http://x.org/a", "192.168.1.1:8080" -> a URL; anything else -> null. */
+        fun webAddress(text: String): String? {
+            val t = text.trim()
+            if (t.isEmpty() || ' ' in t) return null
+            if (Regex("^[a-zA-Z][a-zA-Z0-9+.-]*://").containsMatchIn(t)) return t
+            val host = t.substringBefore('/').substringBefore(':')
+            val ok = Regex("^[a-zA-Z0-9-]+(\\.[a-zA-Z0-9-]+)*\\.[a-zA-Z]{2,}$").matches(host) ||
+                Regex("^\\d{1,3}(\\.\\d{1,3}){3}$").matches(host) || host == "localhost"
+            return if (ok) "https://$t" else null
         }
 
         /** A desktop Chrome (Linux) user agent with the same Chrome version as this WebView. */

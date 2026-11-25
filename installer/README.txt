@@ -8,7 +8,8 @@ What it does
   Search, Play/Pause, Full screen, Apps) and its own big keyboard with search suggestions.
   Works whether your phone has the original YouTube app or YouTube ReVanced (or neither): the car
   screen plays YouTube's mobile website inside AutoTube. On the phone you pick videos in either
-  app and tap Share > "Play in car (AutoTube)". Prime Video can be switched on too.
+  app and tap Share > "Play in car (AutoTube)". Prime Video can be switched on too, and a
+  web browser with ad blocking opens any other website (music, radio, videos).
 
 Safety
   Driving lock (on by default): the picture is shown only while the phone's GPS says the car is
@@ -67,7 +68,13 @@ Set up on the phone (once)
 Using it
   - Search: the magnifier on the left (or the site's own search box) opens a big keyboard.
   - Full screen: the corner-arrows button shows only the video, filling AutoTube's whole area.
-    Tap the screen for a small bar (leave full screen, play/pause); Back also leaves it.
+    Tap the screen for the control bar: leave full screen, back / forward 10 seconds,
+    play/pause, a seek bar (drag to jump) with the time, and mute. Back also leaves full screen.
+  - Web browser: Apps > Browser opens any website (music, radio, videos, films). Tap the address
+    bar or the magnifier to search or type an address; the star keeps a site on the start page
+    (the x on its tile removes it); the screen button asks sites for their desktop version.
+    Ads, trackers and pop-ups are blocked (the shield shows how many); switch this off, or update
+    the block list, in AutoTube on the phone > Web browser.
     (Android Auto's own taskbar and side cards stay: no app can cover those.)
   - From the phone: in YouTube or YouTube ReVanced tap Share > "Play in car (AutoTube)", or use
     AutoTube's "Send to the car" box. If both apps are installed, AutoTube's
@@ -100,5 +107,6 @@ Privacy
   No AutoTube account, no analytics. Location stays on the phone (only used for the parked
   check). The sites (YouTube, Prime Video) and YouTube's search suggestions are loaded
   directly from those services, as in any browser.
+  For ad blocking the app downloads the public StevenBlack hosts list from GitHub about once a week.
 
 No warranty. Use at your own risk.
