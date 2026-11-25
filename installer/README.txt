@@ -74,9 +74,10 @@ Using it
     "Use a different app" button chooses which one its "Pick a video" button opens.
   - Ads: video ads are muted, fast-forwarded and skipped and ad cards are hidden. Switch this
     off in AutoTube > Settings. (Skipping ads may be against YouTube's terms; your choice.)
-  - Prime Video (optional, experimental): turn it on in AutoTube on the phone and sign in there;
-    the car screen then gets an Apps button. It protects its videos (DRM), so on some phones or
-    cars it may refuse to play, play in lower quality or show a black picture.
+  - Prime Video (optional): turn it on in AutoTube on the phone and sign in there; the car
+    screen then gets an Apps button. Confirmed working on a Samsung Galaxy (Android 17). It
+    protects its videos (DRM), so other phones or cars may refuse to play it or show a black
+    picture, and phones with only software DRM play it in standard definition.
   - Netflix is not offered: Netflix refuses to play in in-app browsers and blocks screen
     mirroring. If your car has an Android head unit, use the Netflix app on the head unit.
   - It remembers the last video and resumes there next time.
